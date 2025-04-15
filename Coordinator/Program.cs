@@ -1,10 +1,26 @@
-﻿public class Program
+﻿using System.Text;
+
+public class Program
 {
     public static void Main(string[] args)
     {
-        if(File.Exists(args[0]))
+        const int CHUNKS_AMOUNT = 10;
+        if (File.Exists(args[0]))
         {
-            SplitFile(args[0]);
+            using StreamReader reader = File.OpenText(args[0]);
+            using var words = GetWords(reader).GetEnumerator();
+            if (!words.MoveNext())
+            {
+                Console.WriteLine("Invalid text file.");
+                return;
+            }
+
+            int chunkLength = (int)Math.Ceiling(reader.BaseStream.Length / (double)CHUNKS_AMOUNT);
+            Console.WriteLine(chunkLength);
+            for (int i = 0; i < CHUNKS_AMOUNT; i++)
+            {
+                WriteWords(words, reader.CurrentEncoding, $"./chunk{i}.txt", chunkLength);
+            };
         }
         else
         {
@@ -12,22 +28,29 @@
         }
     }
 
-    static void SplitFile(string filePath)
+    static void WriteWords(IEnumerator<string> words, Encoding encoding, string outputPath, int maxFileSize)
     {
-        const int CHUNKS_AMOUNT = 10;
-
-        using StreamReader reader = File.OpenText(filePath);
-        int chunkSize = (int)Math.Ceiling(reader.BaseStream.Length / (double)CHUNKS_AMOUNT);
-        var lastLine = string.Empty;
-        for(int i = 0; i < CHUNKS_AMOUNT; i++)
+        var buffer = new List<byte>();
+        do
         {
-            var buffer = new List<byte>();
-            while(lastLine != null && chunkSize - buffer.Count >= reader.CurrentEncoding.GetByteCount(lastLine))
+            buffer.AddRange(encoding.GetBytes(words.Current + " "));
+        }
+        while (words.MoveNext() && maxFileSize - buffer.Count >= encoding.GetByteCount(words.Current));
+
+        File.WriteAllBytes(outputPath, buffer.ToArray());
+    }
+
+    static IEnumerable<string> GetWords(StreamReader reader)
+    {
+        string? line;
+        while ((line = reader.ReadLine()) != null)
+        {
+            var words = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+
+            foreach (var word in words)
             {
-                buffer.AddRange(reader.CurrentEncoding.GetBytes(lastLine));
-                lastLine = reader.ReadLine() + " ";
+                yield return word;
             }
-            File.WriteAllBytes($"./chunk{i}.txt", buffer.ToArray());
-        };
+        }
     }
 }
