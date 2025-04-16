@@ -16,7 +16,6 @@ public class Program
             }
 
             int chunkLength = (int)Math.Ceiling(reader.BaseStream.Length / (double)CHUNKS_AMOUNT);
-            Console.WriteLine(chunkLength);
             for (int i = 0; i < CHUNKS_AMOUNT; i++)
             {
                 WriteWords(words, reader.CurrentEncoding, $"./chunk{i}.txt", chunkLength);
