@@ -1,10 +1,14 @@
 ﻿using System.Text;
+using Coordinator.Services;
 
 public class Program
 {
+    const int CHUNKS_AMOUNT = 10;
+
     public static void Main(string[] args)
     {
-        const int CHUNKS_AMOUNT = 10;
+        RedisMessageService messageService = new RedisMessageService();
+
         if (File.Exists(args[0]))
         {
             using StreamReader reader = File.OpenText(args[0]);
@@ -15,11 +19,21 @@ public class Program
                 return;
             }
 
+            var task = new Task[CHUNKS_AMOUNT];
             int chunkLength = (int)Math.Ceiling(reader.BaseStream.Length / (double)CHUNKS_AMOUNT);
             for (int i = 0; i < CHUNKS_AMOUNT; i++)
             {
-                WriteWords(words, reader.CurrentEncoding, $"./chunk{i}.txt", chunkLength);
+                var filePath = Path.GetFullPath($"./chunk{i}.txt");
+                WriteWords(words, reader.CurrentEncoding, filePath, chunkLength);
+                task[i] = messageService.QueueTask("map_queue", filePath);
+                Console.WriteLine($"Chunk{i}");
             };
+
+            Task.WaitAll(task);
+            Console.WriteLine("Mapper completed.");
+            
+            var shuffleService = new ShuffleService();
+            shuffleService.CreateReducerFiles();
         }
         else
         {

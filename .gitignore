@@ -7,6 +7,7 @@
 .env
 
 chunk*.txt
+mapper*.tmp
 
 # User-specific files
 *.rsuser
