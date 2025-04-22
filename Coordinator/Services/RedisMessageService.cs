@@ -5,8 +5,8 @@ namespace Coordinator.Services;
 public class RedisMessageService
 {
     const string REDUCER_TASK_KEY = "reducer:task";
-    const string MAPPERS_ID_KEY = "mapper:id";
-    const string REDUCERS_ID_KEY = "reducer:id";
+    const string MAPPER_ID_KEY = "mapper:id";
+    const string REDUCER_ID_KEY = "reducer:id";
     const string MAPPERS_SET_KEY = "mappers";
     const string REDUCERS_SET_KEY = "reducers";
     readonly ConnectionMultiplexer _redis;
@@ -35,7 +35,7 @@ public class RedisMessageService
 
     private Task GetTaskCompletion(RedisKey queue, RedisValue task)
     {
-        var completionSource = new TaskCompletionSource();
+        var completionSource = new TaskCompletionSource<string>();
         RedisChannel channelPattern = new RedisChannel("task_done", RedisChannel.PatternMode.Pattern);
 
         Action<RedisChannel, RedisValue>? handler = null;
@@ -43,8 +43,8 @@ public class RedisMessageService
         {
             if (message == task)
             {
-                Console.WriteLine("Task completed:" + message);
-                completionSource.SetResult();
+                Console.WriteLine($"{Path.GetFullPath(message.ToString())} processed.");
+                completionSource.SetResult(message.ToString());
             }
             if(_db.ListLength(queue) == 0)
                 _sub.Unsubscribe(channelPattern, handler);
@@ -57,8 +57,8 @@ public class RedisMessageService
 
     private void CleanWokers()
     {
-        _db.StringSet(MAPPERS_ID_KEY, -1);
-        _db.StringSet(REDUCERS_ID_KEY, -1);
+        _db.StringSet(MAPPER_ID_KEY, -1);
+        _db.StringSet(REDUCER_ID_KEY, -1);
         _db.KeyDelete(MAPPERS_SET_KEY);
         _db.KeyDelete(REDUCERS_SET_KEY);
     }

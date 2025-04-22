@@ -8,6 +8,7 @@
 
 chunk*.txt
 mapper*.tmp
+tmp/
 
 # User-specific files
 *.rsuser

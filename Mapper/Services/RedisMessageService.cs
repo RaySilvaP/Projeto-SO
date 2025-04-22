@@ -23,7 +23,7 @@ public class RedisMessageService
 
     public RedisValue PopTask()
     {
-        return _db.ListLeftPop("map_queue");
+        return _db.ListRightPop("map_queue");
     }
 
     public void PublishCompletedTask(RedisValue task)

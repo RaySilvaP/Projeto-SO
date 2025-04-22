@@ -12,7 +12,7 @@ public class ShuffleService
         _messageService = messageService;
     }
             
-    public void CreateReducerFiles()
+    public Task[] ShuffleFiles()
     {
         string[] mapperFiles = Directory.GetFiles(_tmpPath, "mapper*");
         var dictionary = new Dictionary<string, List<int>>();
@@ -30,28 +30,43 @@ public class ShuffleService
             }
             File.Delete(file);
         }
-        Shuffle(dictionary);
+        return Shuffle(dictionary);
     }
 
-    void Shuffle(Dictionary<string, List<int>> dictionary)
+    Task[] Shuffle(Dictionary<string, List<int>> dictionary)
     {
         if(!Directory.Exists(_tmpPath))
             Directory.CreateDirectory(_tmpPath);
 
         var reducersCount = _messageService.GetReducersCount();
+        var reducers = new Dictionary<string, List<int>>[reducersCount];
         foreach(var item in dictionary)
         {
             var index = item.Key.GetHashCode() % reducersCount;
-            var outputPath = Path.Combine(_tmpPath, $"reducer-{index}-input.json");
-            using StreamWriter writer = new StreamWriter(outputPath, true);
-            writer.WriteLine(JsonSerializer.Serialize(item));
+            if(reducers[index] == null)
+                reducers[index] = new();
+
+            reducers[index].Add(item.Key, item.Value);
         }
+
         var tasks = new Task[reducersCount];
         for(int i = 0; i < reducersCount; i++)
         {
-            tasks[i] = _messageService.QueueTask($"reducer_{i}_queue", $"reducer-{i}-input.json");
+            tasks[i] = CreateReducerFile(reducers[i], i);
         }
-        Task.WaitAll(tasks);
+        return tasks;
+    }
+
+    Task CreateReducerFile(Dictionary<string, List<int>> dictionary, int reducerId)
+    {
+        var outputPath = Path.Combine(_tmpPath, $"reducer-{reducerId}-input.json");
+        using StreamWriter writer = new StreamWriter(outputPath, true);
+        foreach(var item in dictionary)
+        {
+            writer.WriteLine(JsonSerializer.Serialize(item));
+        }
+        Console.WriteLine($"{outputPath} created.");
+        return _messageService.QueueTask($"reducer_{reducerId}_queue", $"reducer-{reducerId}-input.json");
     }
 
     KeyValuePair<string, int> ToKeyValuePair(string text)

@@ -29,7 +29,7 @@ public class Program
 
 
         var dictionary = new Dictionary<string, int>();
-        var outputPath = Path.Combine(_tmpPath, $"reducer-{_messageService.Id}-output.json");
+        var outputPath = Path.Combine(_tmpPath, $"reducer-{_messageService.ReducerId}-output.json");
         using StreamReader reader = File.OpenText(Path.Combine(_tmpPath, filePath));
         using StreamWriter writer = new StreamWriter(outputPath, true);
 
