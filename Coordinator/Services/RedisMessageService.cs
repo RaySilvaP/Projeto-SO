@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using StackExchange.Redis;
 
 namespace Coordinator.Services;
@@ -12,12 +13,14 @@ public class RedisMessageService
     readonly ConnectionMultiplexer _redis;
     readonly IDatabase _db;
     readonly ISubscriber _sub;
+    private readonly ConcurrentDictionary<string, TaskCompletionSource> _pendingTasks = new();
 
     public RedisMessageService()
     {
         _redis = ConnectionMultiplexer.Connect("localhost");
         _db = _redis.GetDatabase();
         _sub = _redis.GetSubscriber();
+        Subscribe();
         CleanWokers();
     }
 
@@ -29,30 +32,24 @@ public class RedisMessageService
 
     public Task QueueTask(RedisKey queue, RedisValue task)
     {
+        var tsc = new TaskCompletionSource();
+        _pendingTasks[task.ToString()] = tsc;
         _db.ListLeftPush(queue, task);
-        return GetTaskCompletion(queue, task);
+        return tsc.Task;
     }
 
-    private Task GetTaskCompletion(RedisKey queue, RedisValue task)
+    private void Subscribe()
     {
-        var completionSource = new TaskCompletionSource<string>();
         RedisChannel channelPattern = new RedisChannel("task_done", RedisChannel.PatternMode.Pattern);
 
-        Action<RedisChannel, RedisValue>? handler = null;
-        handler = (channel, message) =>
+        _sub.Subscribe(channelPattern, (channel, message) =>
         {
-            if (message == task)
+            if (_pendingTasks.TryRemove(message.ToString(), out var taskSource))
             {
                 Console.WriteLine($"{Path.GetFullPath(message.ToString())} processed.");
-                completionSource.SetResult(message.ToString());
+                taskSource.TrySetResult();
             }
-            if(_db.ListLength(queue) == 0)
-                _sub.Unsubscribe(channelPattern, handler);
-        };
-
-        _sub.Subscribe(channelPattern, handler);
-
-        return completionSource.Task;
+        });
     }
 
     private void CleanWokers()

@@ -9,7 +9,7 @@ public class Program
     static RedisMessageService messageService = null!;
     static ShuffleService shuffleService = null!;
 
-    public static async Task Main(string[] args)
+    public static void Main(string[] args)
     {
         messageService = new RedisMessageService();
         shuffleService = new ShuffleService(messageService);
@@ -19,8 +19,7 @@ public class Program
             {
                 Console.Write("Insert the full file path: ");
                 var filePath = Console.ReadLine() ?? "";
-                using StreamReader reader = File.OpenText(filePath);
-                await ProcessFile(reader);
+                ProcessFile(filePath);
             }
             catch (Exception e)
             {
@@ -29,10 +28,11 @@ public class Program
         }
     }
 
-    static async Task ProcessFile(StreamReader reader)
+    static async void ProcessFile(string filePath)
     {
-        using var words = GetWords(reader).GetEnumerator();
-        if (!words.MoveNext())
+        using StreamReader reader = File.OpenText(filePath);
+        var words = GetWordsAsync(reader).GetAsyncEnumerator();
+        if (!await words.MoveNextAsync())
             throw new Exception("File has no lines.");
 
         int chunkLength = (int)Math.Ceiling(reader.BaseStream.Length / (double)CHUNKS_AMOUNT);
@@ -41,10 +41,10 @@ public class Program
         Console.WriteLine("Spliting file into chunks:");
         for (int i = 0; i < CHUNKS_AMOUNT; i++)
         {
-            var filePath = Path.GetFullPath($"../tmp/chunk{i}.txt");
-            await WriteWords(words, reader.CurrentEncoding, filePath, chunkLength);
+            var outfilePath = Path.GetFullPath($"../tmp/chunk{i}.txt");
+            await WriteWords(words, reader.CurrentEncoding, outfilePath, chunkLength);
 
-            tasks[i] = messageService.QueueTask("map_queue", filePath);
+            tasks[i] = messageService.QueueTask("map_queue", outfilePath);
             Console.WriteLine($"Chunk{i} created.");
         };
 
@@ -58,9 +58,9 @@ public class Program
         Console.WriteLine("Waiting for reduce workers...");
         Task.WaitAll(reducerTasks);
         Console.WriteLine("Reduce completed.");
-        
+
         Console.WriteLine("Merging files.");
-        var outputPath =  MergeFiles();
+        var outputPath = MergeFiles();
         Console.WriteLine($"Result: {Path.GetFullPath(outputPath)}");
     }
 
@@ -71,11 +71,11 @@ public class Program
         var fileName = $"{dateTime.Day}-{dateTime.Month}-{dateTime.Year}_{dateTime.Hour}-{dateTime.Minute}-{dateTime.Second}";
         var outputPath = Path.Combine(_outputPath, $"{fileName}.txt");
         using StreamWriter writer = new StreamWriter(outputPath, true);
-        foreach(var output in reduceOutputs)
+        foreach (var output in reduceOutputs)
         {
             using StreamReader reader = File.OpenText(output);
             string? line;
-            while((line = reader.ReadLine()) != null)
+            while ((line = reader.ReadLine()) != null)
             {
                 writer.WriteLine(line);
             }
@@ -83,23 +83,24 @@ public class Program
         return outputPath;
     }
 
-    static Task WriteWords(IEnumerator<string> words, Encoding encoding, string outputPath, int maxFileSize)
+    static async Task WriteWords(IAsyncEnumerator<string> words, Encoding encoding, string outputPath, int maxFileSize)
     {
+        Console.WriteLine("buffer");
         var buffer = new List<byte>();
         do
         {
             buffer.AddRange(encoding.GetBytes(words.Current + " "));
         }
-        while (words.MoveNext() && maxFileSize - buffer.Count >= encoding.GetByteCount(words.Current));
+        while (await words.MoveNextAsync() && maxFileSize - buffer.Count >= encoding.GetByteCount(words.Current));
 
-        File.WriteAllBytes(outputPath, buffer.ToArray());
-        return Task.CompletedTask;
+        Console.WriteLine("Writing");
+        await File.WriteAllBytesAsync(outputPath, buffer.ToArray());
     }
 
-    static IEnumerable<string> GetWords(StreamReader reader)
+    static async IAsyncEnumerable<string> GetWordsAsync(StreamReader reader)
     {
         string? line;
-        while ((line = reader.ReadLine()) != null)
+        while ((line = await reader.ReadLineAsync()) != null)
         {
             var words = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
 

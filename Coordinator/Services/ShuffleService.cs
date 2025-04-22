@@ -11,19 +11,19 @@ public class ShuffleService
     {
         _messageService = messageService;
     }
-            
+
     public Task[] ShuffleFiles()
     {
         string[] mapperFiles = Directory.GetFiles(_tmpPath, "mapper*");
         var dictionary = new Dictionary<string, List<int>>();
-        foreach(var file in mapperFiles)
+        foreach (var file in mapperFiles)
         {
             using StreamReader reader = File.OpenText(file);
             string? line;
             while ((line = reader.ReadLine()) != null)
             {
                 var keyValue = ToKeyValuePair(line);
-                if(dictionary.ContainsKey(keyValue.Key))
+                if (dictionary.ContainsKey(keyValue.Key))
                     dictionary[keyValue.Key].Add(keyValue.Value);
                 else
                     dictionary[keyValue.Key] = [keyValue.Value];
@@ -35,38 +35,41 @@ public class ShuffleService
 
     Task[] Shuffle(Dictionary<string, List<int>> dictionary)
     {
-        if(!Directory.Exists(_tmpPath))
+        if (!Directory.Exists(_tmpPath))
             Directory.CreateDirectory(_tmpPath);
 
         var reducersCount = _messageService.GetReducersCount();
         var reducers = new Dictionary<string, List<int>>[reducersCount];
-        foreach(var item in dictionary)
+        foreach (var item in dictionary)
         {
             var index = item.Key.GetHashCode() % reducersCount;
-            if(reducers[index] == null)
+            if (reducers[index] == null)
                 reducers[index] = new();
 
             reducers[index].Add(item.Key, item.Value);
         }
 
         var tasks = new Task[reducersCount];
-        for(int i = 0; i < reducersCount; i++)
+        for (int i = 0; i < reducersCount; i++)
         {
-            tasks[i] = CreateReducerFile(reducers[i], i);
+            CreateReducerFile(reducers[i], i);
+            tasks[i] = _messageService.QueueTask($"reducer_{i}_queue", $"reducer-{i}-input.json");
         }
         return tasks;
     }
 
-    Task CreateReducerFile(Dictionary<string, List<int>> dictionary, int reducerId)
+    void CreateReducerFile(Dictionary<string, List<int>> dictionary, int reducerId)
     {
         var outputPath = Path.Combine(_tmpPath, $"reducer-{reducerId}-input.json");
+        if(File.Exists(outputPath))
+            File.Delete(outputPath);
+
         using StreamWriter writer = new StreamWriter(outputPath, true);
-        foreach(var item in dictionary)
+        foreach (var item in dictionary)
         {
             writer.WriteLine(JsonSerializer.Serialize(item));
         }
         Console.WriteLine($"{outputPath} created.");
-        return _messageService.QueueTask($"reducer_{reducerId}_queue", $"reducer-{reducerId}-input.json");
     }
 
     KeyValuePair<string, int> ToKeyValuePair(string text)
