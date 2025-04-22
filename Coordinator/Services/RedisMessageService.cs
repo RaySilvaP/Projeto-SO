@@ -4,21 +4,32 @@ namespace Coordinator.Services;
 
 public class RedisMessageService
 {
-    readonly ConnectionMultiplexer redis;
-    readonly IDatabase db;
-    readonly ISubscriber sub;
+    const string REDUCER_TASK_KEY = "reducer:task";
+    const string MAPPERS_ID_KEY = "mapper:id";
+    const string REDUCERS_ID_KEY = "reducer:id";
+    const string MAPPERS_SET_KEY = "mappers";
+    const string REDUCERS_SET_KEY = "reducers";
+    readonly ConnectionMultiplexer _redis;
+    readonly IDatabase _db;
+    readonly ISubscriber _sub;
 
     public RedisMessageService()
     {
-        redis = ConnectionMultiplexer.Connect("localhost");
-        db = redis.GetDatabase();
-        sub = redis.GetSubscriber();
+        _redis = ConnectionMultiplexer.Connect("localhost");
+        _db = _redis.GetDatabase();
+        _sub = _redis.GetSubscriber();
+        CleanWokers();
     }
 
+    public long GetMappersCount()
+        => _db.SetLength(MAPPERS_SET_KEY);
+
+    public long GetReducersCount()
+        => _db.SetLength(REDUCERS_SET_KEY);
 
     public Task QueueTask(RedisKey queue, RedisValue task)
     {
-        db.ListLeftPush(queue, task);
+        _db.ListLeftPush(queue, task);
         return GetTaskCompletion(queue, task);
     }
 
@@ -33,15 +44,22 @@ public class RedisMessageService
             if (message == task)
             {
                 Console.WriteLine("Task completed:" + message);
-                completionSource.TrySetResult();
+                completionSource.SetResult();
             }
-
-            if(db.ListLength(queue) == 0)
-                sub.Unsubscribe(channelPattern, handler);
+            if(_db.ListLength(queue) == 0)
+                _sub.Unsubscribe(channelPattern, handler);
         };
 
-        sub.Subscribe(channelPattern, handler);
+        _sub.Subscribe(channelPattern, handler);
 
         return completionSource.Task;
+    }
+
+    private void CleanWokers()
+    {
+        _db.StringSet(MAPPERS_ID_KEY, -1);
+        _db.StringSet(REDUCERS_ID_KEY, -1);
+        _db.KeyDelete(MAPPERS_SET_KEY);
+        _db.KeyDelete(REDUCERS_SET_KEY);
     }
 }

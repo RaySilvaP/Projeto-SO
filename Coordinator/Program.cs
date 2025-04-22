@@ -4,10 +4,11 @@ using Coordinator.Services;
 public class Program
 {
     const int CHUNKS_AMOUNT = 10;
+    static RedisMessageService messageService = new RedisMessageService();
+    static ShuffleService shuffleService = new ShuffleService(messageService);
 
     public static void Main(string[] args)
     {
-        RedisMessageService messageService = new RedisMessageService();
 
         if (File.Exists(args[0]))
         {
@@ -31,8 +32,7 @@ public class Program
 
             Task.WaitAll(task);
             Console.WriteLine("Mapper completed.");
-            
-            var shuffleService = new ShuffleService();
+
             shuffleService.CreateReducerFiles();
         }
         else

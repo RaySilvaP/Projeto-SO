@@ -4,11 +4,17 @@ namespace Coordinator.Services;
 
 public class ShuffleService
 {
-    readonly string TMP_PATH = Environment.GetEnvironmentVariable("TMP_PATH") ?? "../tmp";
+    readonly string _tmpPath = Environment.GetEnvironmentVariable("TMP_PATH") ?? "../tmp";
+    readonly RedisMessageService _messageService;
 
+    public ShuffleService(RedisMessageService messageService)
+    {
+        _messageService = messageService;
+    }
+            
     public void CreateReducerFiles()
     {
-        string[] mapperFiles = Directory.GetFiles(TMP_PATH, "mapper*");
+        string[] mapperFiles = Directory.GetFiles(_tmpPath, "mapper*");
         var dictionary = new Dictionary<string, List<int>>();
         foreach(var file in mapperFiles)
         {
@@ -22,16 +28,30 @@ public class ShuffleService
                 else
                     dictionary[keyValue.Key] = [keyValue.Value];
             }
+            File.Delete(file);
         }
         Shuffle(dictionary);
     }
 
     void Shuffle(Dictionary<string, List<int>> dictionary)
     {
+        if(!Directory.Exists(_tmpPath))
+            Directory.CreateDirectory(_tmpPath);
+
+        var reducersCount = _messageService.GetReducersCount();
         foreach(var item in dictionary)
         {
-            Console.WriteLine(JsonSerializer.Serialize(item));
+            var index = item.Key.GetHashCode() % reducersCount;
+            var outputPath = Path.Combine(_tmpPath, $"reducer-{index}-input.json");
+            using StreamWriter writer = new StreamWriter(outputPath, true);
+            writer.WriteLine(JsonSerializer.Serialize(item));
         }
+        var tasks = new Task[reducersCount];
+        for(int i = 0; i < reducersCount; i++)
+        {
+            tasks[i] = _messageService.QueueTask($"reducer_{i}_queue", $"reducer-{i}-input.json");
+        }
+        Task.WaitAll(tasks);
     }
 
     KeyValuePair<string, int> ToKeyValuePair(string text)

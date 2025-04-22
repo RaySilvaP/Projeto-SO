@@ -1,40 +1,31 @@
 ﻿using StackExchange.Redis;
+using Mapper.Services;
 
 public class Program
 {
-    static readonly string ID = Guid.NewGuid().ToString();
-    static readonly string TMP_PATH = Environment.GetEnvironmentVariable("TMP_PATH") ?? "../tmp";
+    static readonly string _tmpPath = Environment.GetEnvironmentVariable("TMP_PATH") ?? "../tmp";
+    static readonly RedisMessageService _messageService = new RedisMessageService();
 
     public static void Main(string[] args)
     {
-        ConnectionMultiplexer redis = ConnectionMultiplexer.Connect("localhost");
-        IDatabase db = redis.GetDatabase();
-        ISubscriber pub = redis.GetSubscriber();
-
         while (true)
         {
-            Process(db, pub);
+            RedisValue task;
+            while (!(task = _messageService.PopTask()).IsNull)
+            {
+                Map(task.ToString());
+                _messageService.PublishCompletedTask(task);
+            }
             Thread.Sleep(500);
         }
     }
 
-    static void Process(IDatabase db, ISubscriber pub)
-    {
-        RedisValue value;
-        RedisChannel pattern = new RedisChannel("task_done", RedisChannel.PatternMode.Pattern);
-        while ((value = db.ListRightPop("map_queue")).HasValue)
-        {
-            Map(value.ToString());
-            pub.Publish(pattern, value.ToString());
-        }
-    }
-    
     static void Map(string filePath)
     {
-        if(!Directory.Exists(TMP_PATH))
-            Directory.CreateDirectory(TMP_PATH);
+        if(!Directory.Exists(_tmpPath))
+            Directory.CreateDirectory(_tmpPath);
 
-        var outputPath = Path.Combine(TMP_PATH, $"mapper-{ID}.tmp");
+        var outputPath = Path.Combine(_tmpPath, $"mapper-{_messageService.MapperId}.tmp");
         using StreamReader reader = File.OpenText(filePath);
         using StreamWriter writer = new StreamWriter(outputPath, true);
         var words = CountWords(reader);
