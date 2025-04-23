@@ -4,17 +4,18 @@ namespace Mapper.Services;
 
 public class RedisMessageService
 {
+    readonly string _redisConnection = Environment.GetEnvironmentVariable("REDIS_CONNECTION") ?? "localhost";
     const string MAPPER_ID_KEY = "mapper:id";
     const string MAPPER_SET_KEY = "mappers";
     readonly ConnectionMultiplexer _redis;
     readonly IDatabase _db;
     readonly ISubscriber _pub;
-    public long MapperId {get; private set;}
+    public long MapperId { get; private set; }
 
 
     public RedisMessageService()
     {
-        _redis = ConnectionMultiplexer.Connect("localhost");
+        _redis = ConnectionMultiplexer.Connect(_redisConnection);
         _db = _redis.GetDatabase();
         _pub = _redis.GetSubscriber();
         MapperId = _db.StringIncrement(MAPPER_ID_KEY);

@@ -1,0 +1,32 @@
+services:
+
+  coordinator:
+    build: ./Coordinator/
+    container_name: coordinator
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      REDIS_CONNECTION: redis
+
+  mapper-worker:
+    build: ./Mapper/
+    depends_on:
+      - coordinator
+    environment:
+      REDIS_CONNECTION: redis
+  
+  reducer-worker:
+    build: ./Reducer/
+    depends_on:
+      - coordinator
+    environment:
+      REDIS_CONNECTION: redis
+
+  redis:
+    image: redis
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5

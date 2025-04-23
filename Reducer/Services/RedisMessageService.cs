@@ -4,6 +4,7 @@ namespace Reducer.Services;
 
 public class RedisMessageService
 {
+    readonly string _redisConnection = Environment.GetEnvironmentVariable("REDIS_CONNECTION") ?? "localhost";
     const string REDUCER_ID_KEY = "reducer:id";
     const string REDUCERS_SET_KEY = "reducers";
     readonly ConnectionMultiplexer _redis;
@@ -13,7 +14,7 @@ public class RedisMessageService
 
     public RedisMessageService()
     {
-        _redis = ConnectionMultiplexer.Connect("localhost");
+        _redis = ConnectionMultiplexer.Connect(_redisConnection);
         _db = _redis.GetDatabase();
         _pub = _redis.GetSubscriber();
         ReducerId = _db.StringIncrement(REDUCER_ID_KEY);
