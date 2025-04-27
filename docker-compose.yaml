@@ -1,27 +1,35 @@
+x-shared-settings: &shared-settings
+  volumes:
+    #host-path:container-path
+    - ~/Desktop:/shared 
+  environment:
+    - REDIS_CONNECTION=redis
+    - BASE_PATH=/shared
+    - OUTPUT_PATH=/shared
+    - TMP_PATH=/shared/tmp
+
 services:
 
   coordinator:
     build: ./Coordinator/
     container_name: coordinator
+    stdin_open: true
     depends_on:
       redis:
         condition: service_healthy
-    environment:
-      REDIS_CONNECTION: redis
+    <<: *shared-settings
 
   mapper-worker:
     build: ./Mapper/
     depends_on:
       - coordinator
-    environment:
-      REDIS_CONNECTION: redis
+    <<: *shared-settings
   
   reducer-worker:
     build: ./Reducer/
     depends_on:
       - coordinator
-    environment:
-      REDIS_CONNECTION: redis
+    <<: *shared-settings
 
   redis:
     image: redis

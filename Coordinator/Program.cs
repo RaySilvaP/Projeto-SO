@@ -3,33 +3,48 @@ using Coordinator.Services;
 
 public class Program
 {
+    static readonly string _basePath = Environment.GetEnvironmentVariable("BASE_PATH") ?? "../";
     static readonly string _tmpPath = Environment.GetEnvironmentVariable("TMP_PATH") ?? "../tmp";
     static readonly string _outputPath = Environment.GetEnvironmentVariable("OUTPUT_PATH") ?? "../";
     const int CHUNKS_AMOUNT = 10;
     static RedisMessageService messageService = null!;
     static ShuffleService shuffleService = null!;
 
-    public static void Main(string[] args)
+    public static async Task Main(string[] args)
     {
         messageService = new RedisMessageService();
         shuffleService = new ShuffleService(messageService);
+
         while (true)
         {
-            try
+            Console.Write("Insert the file name: ");
+            var fileName = Console.ReadLine() ?? "";
+            var filePath = Path.Combine(_basePath, fileName);
+            if(File.Exists(filePath))
             {
-                Console.Write("Insert the full file path: ");
-                var filePath = Console.ReadLine() ?? "";
-                ProcessFile(filePath);
+                await SplitFile(filePath);
+
+                Console.WriteLine("Suffling files...");
+                var reducerTasks = shuffleService.ShuffleFiles();
+
+                Console.WriteLine("Waiting for reduce workers...");
+                Task.WaitAll(reducerTasks);
+                Console.WriteLine("Reduce completed.");
+
+                Console.WriteLine("Merging files.");
+                var outputPath = MergeFiles();
+                Console.WriteLine($"Result: {Path.GetFullPath(outputPath)}");
             }
-            catch (Exception e)
-            {
-                Console.WriteLine(e);
-            }
+            else
+                Console.WriteLine($"File \"{filePath}\" not found.");
         }
     }
 
-    static async void ProcessFile(string filePath)
+    static async Task SplitFile(string filePath)
     {
+        if(!Directory.Exists(_tmpPath))
+            Directory.CreateDirectory(_tmpPath);
+
         using StreamReader reader = File.OpenText(filePath);
         var words = GetWordsAsync(reader).GetAsyncEnumerator();
         if (!await words.MoveNextAsync())
@@ -38,10 +53,10 @@ public class Program
         int chunkLength = (int)Math.Ceiling(reader.BaseStream.Length / (double)CHUNKS_AMOUNT);
 
         var tasks = new Task[CHUNKS_AMOUNT];
-        Console.WriteLine("Spliting file into chunks:");
+        Console.WriteLine("Spliting file into chunks...");
         for (int i = 0; i < CHUNKS_AMOUNT; i++)
         {
-            var outfilePath = Path.GetFullPath($"../tmp/chunk{i}.txt");
+            var outfilePath = Path.Combine(_tmpPath, $"chunk{i}.txt");
             await WriteWords(words, reader.CurrentEncoding, outfilePath, chunkLength);
 
             tasks[i] = messageService.QueueTask("map_queue", outfilePath);
@@ -51,17 +66,6 @@ public class Program
         Console.WriteLine("Waiting for map workers...");
         Task.WaitAll(tasks);
         Console.WriteLine("Map completed.");
-
-        Console.WriteLine("Suffling files:");
-        var reducerTasks = shuffleService.ShuffleFiles();
-
-        Console.WriteLine("Waiting for reduce workers...");
-        Task.WaitAll(reducerTasks);
-        Console.WriteLine("Reduce completed.");
-
-        Console.WriteLine("Merging files.");
-        var outputPath = MergeFiles();
-        Console.WriteLine($"Result: {Path.GetFullPath(outputPath)}");
     }
 
     static string MergeFiles()
@@ -85,7 +89,6 @@ public class Program
 
     static async Task WriteWords(IAsyncEnumerator<string> words, Encoding encoding, string outputPath, int maxFileSize)
     {
-        Console.WriteLine("buffer");
         var buffer = new List<byte>();
         do
         {
@@ -93,7 +96,6 @@ public class Program
         }
         while (await words.MoveNextAsync() && maxFileSize - buffer.Count >= encoding.GetByteCount(words.Current));
 
-        Console.WriteLine("Writing");
         await File.WriteAllBytesAsync(outputPath, buffer.ToArray());
     }
 

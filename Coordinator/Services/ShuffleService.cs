@@ -42,7 +42,8 @@ public class ShuffleService
         var reducers = new Dictionary<string, List<int>>[reducersCount];
         foreach (var item in dictionary)
         {
-            var index = item.Key.GetHashCode() % reducersCount;
+            var wordHash = item.Key.GetHashCode();
+            var index = wordHash % reducersCount;
             if (reducers[index] == null)
                 reducers[index] = new();
 
