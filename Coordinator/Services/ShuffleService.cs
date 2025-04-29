@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 
 namespace Coordinator.Services;
@@ -6,6 +8,7 @@ public class ShuffleService
 {
     readonly string _tmpPath = Environment.GetEnvironmentVariable("TMP_PATH") ?? "../tmp";
     readonly RedisMessageService _messageService;
+    Encoding _encoding = Encoding.UTF8;
 
     public ShuffleService(RedisMessageService messageService)
     {
@@ -19,6 +22,7 @@ public class ShuffleService
         foreach (var file in mapperFiles)
         {
             using StreamReader reader = File.OpenText(file);
+            _encoding = reader.CurrentEncoding;
             string? line;
             while ((line = reader.ReadLine()) != null)
             {
@@ -42,8 +46,7 @@ public class ShuffleService
         var reducers = new Dictionary<string, List<int>>[reducersCount];
         foreach (var item in dictionary)
         {
-            var wordHash = item.Key.GetHashCode();
-            var index = wordHash % reducersCount;
+            var index = Math.Abs(item.Key.GetHashCode() % reducersCount);
             if (reducers[index] == null)
                 reducers[index] = new();
 

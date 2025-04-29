@@ -83,6 +83,7 @@ public class Program
             {
                 writer.WriteLine(line);
             }
+            File.Delete(output);
         }
         return outputPath;
     }
