@@ -8,6 +8,10 @@ public class Program
 
     public static void Main(string[] args)
     {
+        var outputPath = Path.Combine(_tmpPath, $"mapper-{_messageService.MapperId}.tmp");
+        if(File.Exists(outputPath))
+            File.Delete(outputPath);
+
         while (true)
         {
             RedisValue task;

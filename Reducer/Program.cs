@@ -29,19 +29,59 @@ public class Program
 
         var inputPath = Path.Combine(_tmpPath, filePath);
         var outputPath = Path.Combine(_tmpPath, $"reducer-{_messageService.ReducerId}-output.json");
+        if(File.Exists(outputPath))
+            File.Delete(outputPath);
 
-        using var stream = File.OpenRead(inputPath);
+        using StreamReader reader = File.OpenText(inputPath);
         using StreamWriter writer = new StreamWriter(outputPath, true);
 
-        var dictionary = JsonSerializer.Deserialize<Dictionary<string, List<int>>>(stream);
-        if(dictionary == null)
-            throw new Exception("Empty input.");
-        
-        foreach(var entry in dictionary)
+        Console.WriteLine($"Writing to {outputPath}...");
+        string? line;
+        while((line = reader.ReadLine()) != null)
         {
-            var keySum = new KeyValuePair<string, int>(entry.Key, entry.Value.Sum());
+            var keyValue = JsonSerializer.Deserialize<KeyValuePair<string, List<int>>>(line);
+            var keySum = new KeyValuePair<string, int>(keyValue.Key, keyValue.Value.Sum());
             writer.WriteLine(keySum.ToString());
+
         }
-        Console.WriteLine(outputPath);
+        File.Delete(inputPath);
+    }
+
+    static void WriteOuputFile(StreamWriter writer, FileStream stream)
+    {
+        byte[] buffer = new byte[8192]; // 8 KB buffer
+        int bytesRead;
+        bool isFinalBlock = false;
+
+        var state = new JsonReaderState();
+
+        while ((bytesRead = stream.Read(buffer, 0, buffer.Length)) > 0)
+        {
+            isFinalBlock = bytesRead < buffer.Length;
+
+            var reader = new Utf8JsonReader(buffer.AsSpan(0, bytesRead), isFinalBlock, state);
+
+            while (reader.Read())
+            {
+                // Example: detecting dictionary keys and values
+                if (reader.TokenType == JsonTokenType.PropertyName)
+                {
+                    var key = reader.GetString() ?? string.Empty;
+                    reader.Read(); // Move to array
+
+                    if (reader.TokenType == JsonTokenType.StartArray)
+                    {
+                        var values = new List<int>();
+                        while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
+                        {
+                            values.Add(reader.GetInt32());
+                        }
+                        var keySum = new KeyValuePair<string, int>(key, values.Sum());
+                        writer.WriteLine(keySum.ToString());
+                    }
+                }
+            }
+            state = reader.CurrentState;
+        }
     }
 }

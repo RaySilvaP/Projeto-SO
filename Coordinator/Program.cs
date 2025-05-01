@@ -33,7 +33,7 @@ public class Program
                 Console.WriteLine("Reduce completed.");
 
                 Console.WriteLine("Merging files.");
-                var outputPath = MergeFiles();
+                var outputPath = MergeFiles(Path.GetFileNameWithoutExtension(fileName));
                 Console.WriteLine($"Result: {Path.GetFullPath(outputPath)}");
             }
             else
@@ -68,12 +68,11 @@ public class Program
         Console.WriteLine("Map completed.");
     }
 
-    static string MergeFiles()
+    static string MergeFiles(string fileName)
     {
         var reduceOutputs = Directory.GetFiles(_tmpPath, "reducer-*-output.json");
         var dateTime = DateTime.Now;
-        var fileName = $"{dateTime.Day}-{dateTime.Month}-{dateTime.Year}_{dateTime.Hour}-{dateTime.Minute}-{dateTime.Second}";
-        var outputPath = Path.Combine(_outputPath, $"{fileName}.txt");
+        var outputPath = Path.Combine(_outputPath, $"Result-{fileName}.txt");
         using StreamWriter writer = new StreamWriter(outputPath, true);
         foreach (var output in reduceOutputs)
         {

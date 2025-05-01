@@ -17,8 +17,10 @@ public class ShuffleService
     {
         string[] mapperFiles = Directory.GetFiles(_tmpPath, "mapper*");
         var reducersCount = _messageService.GetReducersCount();
+        CleanFiles(reducersCount);
         foreach (var file in mapperFiles)
         {
+            Console.WriteLine($"Shuffling {file}...");
             var reducers = new Dictionary<string, List<int>>[reducersCount];
             using StreamReader reader = File.OpenText(file);
             string? line;
@@ -36,7 +38,6 @@ public class ShuffleService
                     reducers[index][keyValue.Key] = [keyValue.Value];
             }
             File.Delete(file);
-            Console.WriteLine("read");
             if (!Directory.Exists(_tmpPath))
                 Directory.CreateDirectory(_tmpPath);
 
@@ -44,7 +45,7 @@ public class ShuffleService
             {
                 WriteReducerFile(reducers[i], i);
             }
-            Console.WriteLine($"{file} processed.");
+            Console.WriteLine($"{file} shuffled.");
         }
         var tasks = new Task[reducersCount];
         for (int i = 0; i < reducersCount; i++)
@@ -59,28 +60,26 @@ public class ShuffleService
         var outputPath = Path.Combine(_tmpPath, $"reducer-{reducerId}-input.json");
         if (File.Exists(outputPath))
         {
-            using var readStream = File.OpenRead(outputPath);
-            var data = JsonSerializer.Deserialize<Dictionary<string, List<int>>>(readStream);
-            if (data != null)
+            using var readStream = File.OpenText(outputPath);
+            string? line;
+            while ((line = readStream.ReadLine()) != null)
             {
-                foreach (var entry in dictionary)
-                {
-                    if (data.ContainsKey(entry.Key))
-                        data[entry.Key].AddRange(entry.Value);
-                    else
-                        data[entry.Key] = entry.Value;
-                }
-                readStream.Close();
-                using var writeStream = File.OpenWrite(outputPath);
-                Console.WriteLine("Writing to reducer " + reducerId);
-                JsonSerializer.Serialize(writeStream, data);
+                var keyValue = JsonSerializer.Deserialize<KeyValuePair<string, List<int>>>(line);
+                if (dictionary.ContainsKey(keyValue.Key))
+                    dictionary[keyValue.Key].AddRange(keyValue.Value);
+                else
+                    dictionary[keyValue.Key] = keyValue.Value;
+
             }
+            readStream.Close();
+            File.Delete(outputPath);
         }
-        else
+
+        using var writeStream = new StreamWriter(outputPath, true);
+        Console.WriteLine($"Writing to {outputPath}...");
+        foreach (var entry in dictionary)
         {
-            using var stream = File.Create(outputPath);
-            Console.WriteLine("Writing to reducer " + reducerId);
-            JsonSerializer.Serialize(stream, dictionary);
+            writeStream.WriteLine(JsonSerializer.Serialize(entry));
         }
 
     }
@@ -92,5 +91,13 @@ public class ShuffleService
         string key = values[0];
         var value = int.Parse(values[1]);
         return new KeyValuePair<string, int>(key, value);
+    }
+
+    void CleanFiles(long reducersCount)
+    {
+        for(int i = 0; i < reducersCount; i++)
+        {
+            File.Delete(Path.Combine(_tmpPath, $"reducer-{i}-input.json"));
+        }
     }
 }
