@@ -1,5 +1,3 @@
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 
 namespace Coordinator.Services;
@@ -8,7 +6,7 @@ public class ShuffleService
 {
     readonly string _tmpPath = Environment.GetEnvironmentVariable("TMP_PATH") ?? "../tmp";
     readonly RedisMessageService _messageService;
-    Encoding _encoding = Encoding.UTF8;
+    readonly JsonSerializerOptions _options = new JsonSerializerOptions { WriteIndented = true };
 
     public ShuffleService(RedisMessageService messageService)
     {
@@ -18,62 +16,73 @@ public class ShuffleService
     public Task[] ShuffleFiles()
     {
         string[] mapperFiles = Directory.GetFiles(_tmpPath, "mapper*");
-        var dictionary = new Dictionary<string, List<int>>();
+        var reducersCount = _messageService.GetReducersCount();
         foreach (var file in mapperFiles)
         {
+            var reducers = new Dictionary<string, List<int>>[reducersCount];
             using StreamReader reader = File.OpenText(file);
-            _encoding = reader.CurrentEncoding;
             string? line;
             while ((line = reader.ReadLine()) != null)
             {
                 var keyValue = ToKeyValuePair(line);
-                if (dictionary.ContainsKey(keyValue.Key))
-                    dictionary[keyValue.Key].Add(keyValue.Value);
+                var index = Math.Abs(keyValue.Key.GetHashCode() % reducersCount);
+
+                if (reducers[index] == null)
+                    reducers[index] = new();
+
+                if (reducers[index].ContainsKey(keyValue.Key))
+                    reducers[index][keyValue.Key].Add(keyValue.Value);
                 else
-                    dictionary[keyValue.Key] = [keyValue.Value];
+                    reducers[index][keyValue.Key] = [keyValue.Value];
             }
             File.Delete(file);
+            Console.WriteLine("read");
+            if (!Directory.Exists(_tmpPath))
+                Directory.CreateDirectory(_tmpPath);
+
+            for (int i = 0; i < reducers.Length; i++)
+            {
+                WriteReducerFile(reducers[i], i);
+            }
+            Console.WriteLine($"{file} processed.");
         }
-        return Shuffle(dictionary);
-    }
-
-    Task[] Shuffle(Dictionary<string, List<int>> dictionary)
-    {
-        if (!Directory.Exists(_tmpPath))
-            Directory.CreateDirectory(_tmpPath);
-
-        var reducersCount = _messageService.GetReducersCount();
-        var reducers = new Dictionary<string, List<int>>[reducersCount];
-        foreach (var item in dictionary)
-        {
-            var index = Math.Abs(item.Key.GetHashCode() % reducersCount);
-            if (reducers[index] == null)
-                reducers[index] = new();
-
-            reducers[index].Add(item.Key, item.Value);
-        }
-
         var tasks = new Task[reducersCount];
         for (int i = 0; i < reducersCount; i++)
         {
-            CreateReducerFile(reducers[i], i);
             tasks[i] = _messageService.QueueTask($"reducer_{i}_queue", $"reducer-{i}-input.json");
         }
         return tasks;
     }
 
-    void CreateReducerFile(Dictionary<string, List<int>> dictionary, int reducerId)
+    void WriteReducerFile(Dictionary<string, List<int>> dictionary, int reducerId)
     {
         var outputPath = Path.Combine(_tmpPath, $"reducer-{reducerId}-input.json");
-        if(File.Exists(outputPath))
-            File.Delete(outputPath);
-
-        using StreamWriter writer = new StreamWriter(outputPath, true);
-        foreach (var item in dictionary)
+        if (File.Exists(outputPath))
         {
-            writer.WriteLine(JsonSerializer.Serialize(item));
+            using var readStream = File.OpenRead(outputPath);
+            var data = JsonSerializer.Deserialize<Dictionary<string, List<int>>>(readStream);
+            if (data != null)
+            {
+                foreach (var entry in dictionary)
+                {
+                    if (data.ContainsKey(entry.Key))
+                        data[entry.Key].AddRange(entry.Value);
+                    else
+                        data[entry.Key] = entry.Value;
+                }
+                readStream.Close();
+                using var writeStream = File.OpenWrite(outputPath);
+                Console.WriteLine("Writing to reducer " + reducerId);
+                JsonSerializer.Serialize(writeStream, data);
+            }
         }
-        Console.WriteLine($"{outputPath} created.");
+        else
+        {
+            using var stream = File.Create(outputPath);
+            Console.WriteLine("Writing to reducer " + reducerId);
+            JsonSerializer.Serialize(stream, dictionary);
+        }
+
     }
 
     KeyValuePair<string, int> ToKeyValuePair(string text)

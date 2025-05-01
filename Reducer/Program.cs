@@ -27,17 +27,19 @@ public class Program
         if (!Directory.Exists(_tmpPath))
             Directory.CreateDirectory(_tmpPath);
 
-
-        var dictionary = new Dictionary<string, int>();
+        var inputPath = Path.Combine(_tmpPath, filePath);
         var outputPath = Path.Combine(_tmpPath, $"reducer-{_messageService.ReducerId}-output.json");
-        using StreamReader reader = File.OpenText(Path.Combine(_tmpPath, filePath));
+
+        using var stream = File.OpenRead(inputPath);
         using StreamWriter writer = new StreamWriter(outputPath, true);
 
-        string? line;
-        while ((line = reader.ReadLine()) != null)
+        var dictionary = JsonSerializer.Deserialize<Dictionary<string, List<int>>>(stream);
+        if(dictionary == null)
+            throw new Exception("Empty input.");
+        
+        foreach(var entry in dictionary)
         {
-            var keyValue = JsonSerializer.Deserialize<KeyValuePair<string, List<int>>>(line);
-            var keySum = new KeyValuePair<string, int>(keyValue.Key, keyValue.Value.Sum());
+            var keySum = new KeyValuePair<string, int>(entry.Key, entry.Value.Sum());
             writer.WriteLine(keySum.ToString());
         }
         Console.WriteLine(outputPath);
