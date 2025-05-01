@@ -7,6 +7,7 @@ public class Program
     static readonly string _tmpPath = Environment.GetEnvironmentVariable("TMP_PATH") ?? "../tmp";
     static readonly string _outputPath = Environment.GetEnvironmentVariable("OUTPUT_PATH") ?? "../";
     const int CHUNKS_AMOUNT = 10;
+    const int LINE_SIZE = 1024;
     static RedisMessageService messageService = null!;
     static ShuffleService shuffleService = null!;
 
@@ -20,7 +21,7 @@ public class Program
             Console.Write("Insert the file name: ");
             var fileName = Console.ReadLine() ?? "";
             var filePath = Path.Combine(_basePath, fileName);
-            if(File.Exists(filePath))
+            if (File.Exists(filePath))
             {
                 await SplitFile(filePath);
 
@@ -42,17 +43,17 @@ public class Program
 
     static async Task SplitFile(string filePath)
     {
-        if(!Directory.Exists(_tmpPath))
+        if (!Directory.Exists(_tmpPath))
             Directory.CreateDirectory(_tmpPath);
 
         using StreamReader reader = File.OpenText(filePath);
-        var words = GetWordsAsync(reader).GetAsyncEnumerator();
+        await using var words = GetWordsAsync(reader).GetAsyncEnumerator();
         if (!await words.MoveNextAsync())
             throw new Exception("File has no lines.");
 
         int chunkLength = (int)Math.Ceiling(reader.BaseStream.Length / (double)CHUNKS_AMOUNT);
-
         var tasks = new Task[CHUNKS_AMOUNT];
+
         Console.WriteLine("Spliting file into chunks...");
         for (int i = 0; i < CHUNKS_AMOUNT; i++)
         {
@@ -62,7 +63,6 @@ public class Program
             tasks[i] = messageService.QueueTask("map_queue", outfilePath);
             Console.WriteLine($"Chunk{i} created.");
         };
-
         Console.WriteLine("Waiting for map workers...");
         Task.WaitAll(tasks);
         Console.WriteLine("Map completed.");
@@ -90,14 +90,28 @@ public class Program
 
     static async Task WriteWords(IAsyncEnumerator<string> words, Encoding encoding, string outputPath, int maxFileSize)
     {
-        var buffer = new List<byte>();
+        using var writer = new FileStream(outputPath, FileMode.Create, FileAccess.Write);
+        long size = 0;
+        int lineCount = 1;
         do
         {
-            buffer.AddRange(encoding.GetBytes(words.Current + " "));
-        }
-        while (await words.MoveNextAsync() && maxFileSize - buffer.Count >= encoding.GetByteCount(words.Current));
+            byte[] wordsBytes;
+            if(size / lineCount < LINE_SIZE)
+                wordsBytes = encoding.GetBytes(words.Current + ' ');
+            else 
+            {
+                wordsBytes = encoding.GetBytes(words.Current + ' ' + Environment.NewLine);
+                lineCount++;
+            }
 
-        await File.WriteAllBytesAsync(outputPath, buffer.ToArray());
+            size += wordsBytes.Length;
+
+            if (size < maxFileSize)
+                await writer.WriteAsync(wordsBytes);
+            else
+                break;
+        }
+        while (await words.MoveNextAsync());
     }
 
     static async IAsyncEnumerable<string> GetWordsAsync(StreamReader reader)
